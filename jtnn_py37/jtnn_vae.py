@@ -20,7 +20,7 @@ class JTNNVAE(nn.Module):
         super(JTNNVAE, self).__init__()
         self.vocab = vocab
         self.hidden_size = hidden_size
-        self.latent_size = latent_size = latent_size / 2 #Tree and Mol has two vectors
+        self.latent_size = latent_size = latent_size // 2 #Tree and Mol has two vectors
 
         self.jtnn = JTNNEncoder(hidden_size, depthT, nn.Embedding(vocab.size(), hidden_size))
         self.decoder = JTNNDecoder(vocab, hidden_size, latent_size, nn.Embedding(vocab.size(), hidden_size))
@@ -29,7 +29,7 @@ class JTNNVAE(nn.Module):
         self.mpn = MPN(hidden_size, depthG)
 
         self.A_assm = nn.Linear(latent_size, hidden_size, bias=False)
-        self.assm_loss = nn.CrossEntropyLoss(size_average=False)
+        self.assm_loss = nn.CrossEntropyLoss(reduction='sum')
 
         self.T_mean = nn.Linear(hidden_size, latent_size)
         self.T_var = nn.Linear(hidden_size, latent_size)
@@ -42,10 +42,27 @@ class JTNNVAE(nn.Module):
         return tree_vecs, tree_mess, mol_vecs
     
     def encode_from_smiles(self, smiles_list):
-        tree_batch = [MolTree(s) for s in smiles_list]
+        tree_batch = [MolTree(s, self.vocab) for s in smiles_list]
         _, jtenc_holder, mpn_holder = tensorize(tree_batch, self.vocab, assm=False)
         tree_vecs, _, mol_vecs = self.encode(jtenc_holder, mpn_holder)
-        return torch.cat([tree_vecs, mol_vecs], dim=-1)
+        return tree_vecs, mol_vecs
+
+    def carefully_encode_from_smiles(self, smiles_list):
+         
+        failed_smiles = []
+        tree_batch = []
+        for s in smiles_list:
+            try:
+                tree_batch.append(MolTree(s, self.vocab))
+            except AssertionError:
+                failed_smiles.append(s)
+        _, jtenc_holder, mpn_holder = tensorize(tree_batch, self.vocab, assm=False)
+        # one-hot encoding from smiles
+        x_tree, _, x_mol = self.encode(jtenc_holder, mpn_holder)
+        ## Encode one-hots to z-mean and -log variance. 
+        tree_mean = self.T_mean(x_tree)
+        mol_mean = self.G_mean(x_mol)
+        return tree_mean, mol_mean, failed_smiles
 
     def encode_latent(self, jtenc_holder, mpn_holder):
         tree_vecs, _ = self.jtnn(*jtenc_holder)

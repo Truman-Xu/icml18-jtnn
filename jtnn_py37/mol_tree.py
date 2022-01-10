@@ -57,11 +57,14 @@ class MolTreeNode(object):
         else:
             self.cands = []
 
+    
+
+
 class MolTree(object):
 
-    def __init__(self, smiles):
+    def __init__(self, smiles, vocab):
         self.smiles = smiles
-        self.mol = get_mol(smiles)
+        self.mol = get_mol(self.smiles)
 
         #Stereo Generation (currently disabled)
         #mol = Chem.MolFromSmiles(smiles)
@@ -74,8 +77,11 @@ class MolTree(object):
         root = 0
         for i,c in enumerate(cliques):
             cmol = get_clique_mol(self.mol, c)
-            node = MolTreeNode(get_smiles(cmol), c)
+            node_smi = get_smiles(cmol)
+            assert self.is_in_vocab(node_smi, vocab), "{} is not in vocab".format(smiles)
+            node = MolTreeNode(node_smi, c)
             self.nodes.append(node)
+            # root node is the one containing atom idx 0
             if min(c) == 0: root = i
 
         for x,y in edges:
@@ -83,11 +89,13 @@ class MolTree(object):
             self.nodes[y].add_neighbor(self.nodes[x])
         
         if root > 0:
+            # place the root node first in the node list
             self.nodes[0],self.nodes[root] = self.nodes[root],self.nodes[0]
 
         for i,node in enumerate(self.nodes):
             node.nid = i + 1
             if len(node.neighbors) > 1: #Leaf node mol is not marked
+                # map all atoms in a node to their respective node id
                 set_atommap(node.mol, node.nid)
             node.is_leaf = (len(node.neighbors) == 1)
 
@@ -101,6 +109,9 @@ class MolTree(object):
     def assemble(self):
         for node in self.nodes:
             node.assemble()
+    
+    def is_in_vocab(self, node_smiles, vocab):
+        return node_smiles in vocab.vocab
 
 def dfs(node, fa_idx):
     max_depth = 0
