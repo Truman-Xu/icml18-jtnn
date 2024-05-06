@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .mol_tree import Vocab, MolTree, MolTreeNode
+from .mol_tree import MolTree, MolTreeNode
 from .nnutils import create_var, GRU
 from .chemutils import enum_assemble, set_atommap
 import copy
@@ -24,7 +24,7 @@ class JTNNDecoder(nn.Module):
         self.W_r = nn.Linear(hidden_size, hidden_size)
         self.W_h = nn.Linear(2 * hidden_size, hidden_size)
 
-        #Word Prediction Weights 
+        #Word Prediction Weights
         self.W = nn.Linear(hidden_size + latent_size, hidden_size)
 
         #Stop Prediction Weights
@@ -36,8 +36,8 @@ class JTNNDecoder(nn.Module):
         self.U_o = nn.Linear(hidden_size, 1)
 
         #Loss Functions
-        self.pred_loss = nn.CrossEntropyLoss(reduction='sum')
-        self.stop_loss = nn.BCEWithLogitsLoss(reduction='sum')
+        self.pred_loss = nn.CrossEntropyLoss(size_average=False)
+        self.stop_loss = nn.BCEWithLogitsLoss(size_average=False)
 
     def aggregate(self, hiddens, contexts, x_tree_vecs, mode):
         if mode == 'word':
@@ -67,7 +67,7 @@ class JTNNDecoder(nn.Module):
         batch_size = len(mol_batch)
         pred_hiddens.append(create_var(torch.zeros(len(mol_batch),self.hidden_size)))
         pred_targets.extend([mol_tree.nodes[0].wid for mol_tree in mol_batch])
-        pred_contexts.append( create_var( torch.LongTensor(list(range(batch_size))) ) )
+        pred_contexts.append( create_var( torch.LongTensor(range(batch_size)) ) )
 
         max_iter = max([len(tr) for tr in traces])
         padding = create_var(torch.zeros(self.hidden_size), False)
@@ -159,7 +159,7 @@ class JTNNDecoder(nn.Module):
 
         stop_hidden = torch.cat([cur_x,cur_o], dim=1)
         stop_hiddens.append( stop_hidden )
-        stop_contexts.append( create_var( torch.LongTensor(list(range(batch_size))) ) )
+        stop_contexts.append( create_var( torch.LongTensor(range(batch_size)) ) )
         stop_targets.extend( [0] * len(mol_batch) )
 
         #Predict next clique
@@ -301,7 +301,7 @@ def have_slots(fa_slots, ch_slots):
 
     if len(matches) == 0: return False
 
-    fa_match,ch_match = list(zip(*matches))
+    fa_match,ch_match = zip(*matches)
     if len(set(fa_match)) == 1 and 1 < len(fa_slots) <= 2: #never remove atom from ring
         fa_slots.pop(fa_match[0])
     if len(set(ch_match)) == 1 and 1 < len(ch_slots) <= 2: #never remove atom from ring
@@ -327,7 +327,7 @@ def can_assemble(node_x, node_y):
     neighbors = sorted(neighbors, key=lambda x:x.mol.GetNumAtoms(), reverse=True)
     singletons = [nei for nei in neis if nei.mol.GetNumAtoms() == 1]
     neighbors = singletons + neighbors
-    cands,aroma_scores = enum_assemble(node_x, neighbors)
+    cands, aroma_scores = enum_assemble(node_x, neighbors)
     return len(cands) > 0# and sum(aroma_scores) >= 0
 
 if __name__ == "__main__":

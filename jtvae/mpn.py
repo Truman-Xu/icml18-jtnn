@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import rdkit.Chem as Chem
 import torch.nn.functional as F
-from .nnutils import *
+from .nnutils import create_var, index_select_ND
 from .chemutils import get_mol
 
 ELEM_LIST = ['C', 'N', 'O', 'S', 'F', 'Si', 'P', 'Cl', 'Br', 'Mg', 'Na', 'Ca', 'Fe', 'Al', 'I', 'B', 'K', 'Se', 'Zn', 'H', 'Cu', 'Mn', 'unknown']
@@ -14,7 +14,7 @@ MAX_NB = 6
 def onek_encoding_unk(x, allowable_set):
     if x not in allowable_set:
         x = allowable_set[-1]
-    return [x == s for s in allowable_set]
+    return list(map(lambda s: x == s, allowable_set))
 
 def atom_features(atom):
     return torch.Tensor(onek_encoding_unk(atom.GetSymbol(), ELEM_LIST) 

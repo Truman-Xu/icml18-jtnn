@@ -1,12 +1,10 @@
+import os, random
+import pickle
 import torch
 from torch.utils.data import Dataset, DataLoader
-from mol_tree import MolTree
-import numpy as np
-from jtnn_enc import JTNNEncoder
-from mpn import MPN
-from jtmpn import JTMPN
-import cPickle as pickle
-import os, random
+from .jtnn_enc import JTNNEncoder
+from .mpn import MPN
+from .jtmpn import JTMPN
 
 class PairTreeFolder(object):
 
@@ -25,7 +23,7 @@ class PairTreeFolder(object):
     def __iter__(self):
         for fn in self.data_files:
             fn = os.path.join(self.data_folder, fn)
-            with open(fn) as f:
+            with open(fn, 'rb') as f:
                 data = pickle.load(f)
 
             if self.shuffle: 
@@ -60,7 +58,7 @@ class MolTreeFolder(object):
     def __iter__(self):
         for fn in self.data_files:
             fn = os.path.join(self.data_folder, fn)
-            with open(fn) as f:
+            with open(fn, 'rb') as f:
                 data = pickle.load(f)
 
             if self.shuffle: 
@@ -108,8 +106,7 @@ class MolTreeDataset(Dataset):
 def tensorize(tree_batch, vocab, assm=True):
     set_batch_nodeID(tree_batch, vocab)
     smiles_batch = [tree.smiles for tree in tree_batch]
-    jtenc_holder,mess_dict = JTNNEncoder.tensorize(tree_batch)
-    jtenc_holder = jtenc_holder
+    jtenc_holder, mess_dict = JTNNEncoder.tensorize(tree_batch)
     mpn_holder = MPN.tensorize(smiles_batch)
 
     if assm is False:

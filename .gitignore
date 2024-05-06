@@ -1,2 +1,6 @@
 *.pyc
 processed/
+.ipynb_checkpoints/
+__pycache__/
+notebooks/
+*.egg-info/
