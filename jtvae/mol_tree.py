@@ -1,6 +1,6 @@
 import rdkit
-import rdkit.Chem as Chem
-from .chemutils import get_clique_mol, tree_decomp, get_mol, get_smiles, set_atommap, enum_assemble
+from rdkit import Chem
+from .chemutils import get_clique_mol, tree_decomp, get_mol, set_atommap, enum_assemble
 
 class MolTreeNode:
     def __init__(self, smiles, clique=[]):
@@ -36,32 +36,17 @@ class MolTreeNode:
 
         clique = list(set(clique))
         label_mol = get_clique_mol(original_mol, clique)
-        self.label = Chem.MolToSmiles(Chem.MolFromSmiles(get_smiles(label_mol)))
+        self.label = Chem.MolToSmiles(label_mol)
 
         for cidx in clique:
             original_mol.GetAtomWithIdx(cidx).SetAtomMapNum(0)
 
         return self.label
 
-    def assemble(self):
-        neighbors = [nei for nei in self.neighbors if nei.mol.GetNumAtoms() > 1]
-        neighbors = sorted(neighbors, key=lambda x:x.mol.GetNumAtoms(), reverse=True)
-        singletons = [nei for nei in self.neighbors if nei.mol.GetNumAtoms() == 1]
-        neighbors = singletons + neighbors
-
-        cands,aroma = enum_assemble(self, neighbors)
-        new_cands = [cand for i,cand in enumerate(cands) if aroma[i] >= 0]
-        if len(new_cands) > 0: cands = new_cands
-
-        if len(cands) > 0:
-            self.cands, _ = zip(*cands)
-            self.cands = list(self.cands)
-
-
 class MolTree:
     def __init__(self, smiles):
         self.smiles = smiles
-        self.mol = get_mol(smiles)
+        self.mol = Chem.MolFromSmiles(smiles)
 
         #Stereo Generation (currently disabled)
         #mol = Chem.MolFromSmiles(smiles)
@@ -74,7 +59,7 @@ class MolTree:
         root = 0
         for i, c in enumerate(cliques):
             cmol = get_clique_mol(self.mol, c)
-            node = MolTreeNode(get_smiles(cmol), c)
+            node = MolTreeNode(Chem.MolToSmiles(cmol), c)
             self.nodes.append(node)
             if min(c) == 0:
                 root = i

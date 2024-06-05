@@ -5,6 +5,7 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import minimum_spanning_tree
 from rdkit.Chem.EnumerateStereoisomers import EnumerateStereoisomers
 from .vocab import Vocab
+from rdkit.Chem.rdchem import BondType
 
 MST_MAX_WEIGHT = 100 
 MAX_NCAND = 2000
@@ -65,11 +66,98 @@ def copy_edit_mol(mol):
         new_mol.AddBond(a1, a2, bt)
     return new_mol
 
+def get_carbon_nei_group(carbon, group, ter):
+    for nei in carbon.GetNeighbors():
+        nei_idx = nei.GetIdx()
+        if nei.GetSymbol() == 'C':
+            if nei_idx not in group:
+                group.append(nei_idx)
+                group, ter = get_carbon_nei_group(nei, group, ter)
+        else:
+            ter.append(carbon.GetIdx())
+    return group, ter
+
+def find_group_carbons(carbons):
+    checked = []
+    groups = []
+    for carbon in carbons:
+        carbon_idx = carbon.GetIdx()
+        if carbon_idx in checked:
+            continue
+        group, ter = get_carbon_nei_group(carbon, [carbon_idx], [])
+        groups.append((group, ter))
+        checked += group
+    return groups
+
+# edmol = Chem.EditableMol(new_mol)
+def correct_aromatic_ring(new_mol):
+    all_pnictogens = []
+    protonated = []
+    carbons = []
+    n_chalcogens = 0
+    n_heavy = new_mol.GetNumHeavyAtoms()
+    for atom in new_mol.GetAtoms():
+        if not atom.GetIsAromatic():
+            return
+        symbol = atom.GetSymbol()
+        if symbol == 'N' or symbol == 'P':
+            all_pnictogens.append(atom)
+            atom.SetNoImplicit(True)
+            if atom.GetTotalNumHs() > 0:
+                protonated.append(atom)
+        elif symbol == 'C':
+            carbons.append(atom)
+        elif symbol == 'S' or symbol == 'O':
+            n_chalcogens += 1
+        else:
+            raise ValueError(
+                "Only rings containing 'C', 'N', 'O', 'P', 'S' are supported "
+                f"in correct_aromatic_ring, while {symbol} is found."
+            )
+
+    n_pnictogens = len(all_pnictogens)
+    n_carbons = len(carbons)
+    n_double_bonds = (n_carbons + n_pnictogens) // 2
+    n_pnictogens_lone_pairs = 0
+    if n_pnictogens:
+        n_pnictogens_lone_pairs = (n_carbons + n_pnictogens) % 2
+        n_protonation = n_pnictogens_lone_pairs - len(protonated)
+
+        if n_protonation > 0:
+            for i in range(abs(n_protonation)):
+                all_pnictogens[i].SetNumExplicitHs(1)
+        elif n_protonation < 0:
+            for i in range(abs(n_protonation)):
+                protonated[i].SetNumExplicitHs(0)
+    else:
+        carbon_groups = find_group_carbons(carbons)
+        for group, ter in carbon_groups:
+            if len(group) == 1:
+                charged_carbon = new_mol.GetAtomWithIdx(group[0])
+                charged_carbon.SetFormalCharge(2)
+            elif len(group) % 2:
+                charged_carbon = new_mol.GetAtomWithIdx(ter[0])
+                charged_carbon.SetFormalCharge(2)
+
+    n_total_lone_pairs = n_pnictogens_lone_pairs + n_chalcogens
+    n_total_electrons = (n_total_lone_pairs + n_double_bonds) * 2
+    return ((n_total_electrons - 2) % 4 == 0)
+
+def correct_non_ring_aromaticity(new_mol):
+    for atom in new_mol.GetAtoms():
+        if not atom.IsInRing():
+            atom.SetIsAromatic(False)
+
 def get_clique_mol(mol, atoms):
-    smiles = Chem.MolFragmentToSmiles(mol, atoms, kekuleSmiles=True)
+    smiles = Chem.MolFragmentToSmiles(mol, atoms, kekuleSmiles=False)
     new_mol = Chem.MolFromSmiles(smiles, sanitize=False)
-    new_mol = copy_edit_mol(new_mol).GetMol()
-    new_mol = sanitize(new_mol) #We assume this is not None
+    correct_non_ring_aromaticity(new_mol)
+    Chem.SanitizeMol(new_mol, sanitizeOps=4)
+    ring_atom_lists = list(Chem.GetSymmSSSR(new_mol))
+    if len(ring_atom_lists) == 1:
+        is_aromatic = correct_aromatic_ring(new_mol)
+    # new_mol = copy_edit_mol(new_mol).GetMol()
+    Chem.SanitizeMol(new_mol) #We assume this is not None
     return new_mol
 
 def tree_decomp(mol):
