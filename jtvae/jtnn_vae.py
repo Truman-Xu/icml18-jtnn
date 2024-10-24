@@ -75,6 +75,12 @@ class JTNNVAE(nn.Module):
         z_mol = torch.randn(1, self.latent_size).cuda()
         return self.decode(z_tree, z_mol, prob_decode)
 
+    def sample_prior_with_vecs(self, prob_decode=False):
+        z_tree = torch.randn(1, self.latent_size).cuda()
+        z_mol = torch.randn(1, self.latent_size).cuda()
+        smiles = self.decode(z_tree, z_mol, prob_decode)
+        return torch.cat([z_tree, z_mol], dim=1), smiles
+    
     def forward(self, x_batch, beta):
         x_batch, x_jtenc_holder, x_mpn_holder, x_jtmpn_holder = x_batch
         x_tree_vecs, x_tree_mess, x_mol_vecs = self.encode(x_jtenc_holder, x_mpn_holder)
