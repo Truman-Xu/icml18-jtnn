@@ -59,7 +59,7 @@ class MolTree:
         root = 0
         for i, c in enumerate(cliques):
             cmol = get_clique_mol(self.mol, c)
-            node = MolTreeNode(Chem.MolToSmiles(cmol), c)
+            node = MolTreeNode(Chem.MolToSmiles(cmol, kekuleSmiles=True), c)
             self.nodes.append(node)
             if min(c) == 0:
                 root = i

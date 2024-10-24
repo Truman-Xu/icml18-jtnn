@@ -149,14 +149,14 @@ def correct_non_ring_aromaticity(new_mol):
             atom.SetIsAromatic(False)
 
 def get_clique_mol(mol, atoms):
-    smiles = Chem.MolFragmentToSmiles(mol, atoms, kekuleSmiles=False)
+    smiles = Chem.MolFragmentToSmiles(mol, atoms, kekuleSmiles=True)
     new_mol = Chem.MolFromSmiles(smiles, sanitize=False)
-    correct_non_ring_aromaticity(new_mol)
-    Chem.SanitizeMol(new_mol, sanitizeOps=4)
-    ring_atom_lists = list(Chem.GetSymmSSSR(new_mol))
-    if len(ring_atom_lists) == 1:
-        is_aromatic = correct_aromatic_ring(new_mol)
-    # new_mol = copy_edit_mol(new_mol).GetMol()
+    # correct_non_ring_aromaticity(new_mol)
+    # Chem.SanitizeMol(new_mol, sanitizeOps=4)
+    # ring_atom_lists = list(Chem.GetSymmSSSR(new_mol))
+    # if len(ring_atom_lists) == 1:
+    #     is_aromatic = correct_aromatic_ring(new_mol)
+    new_mol = copy_edit_mol(new_mol).GetMol()
     Chem.SanitizeMol(new_mol) #We assume this is not None
     return new_mol
 
