@@ -26,13 +26,19 @@ def atom_features(atom):
 def bond_features(bond):
     bt = bond.GetBondType()
     stereo = int(bond.GetStereo())
-    fbond = [bt == Chem.rdchem.BondType.SINGLE, bt == Chem.rdchem.BondType.DOUBLE, bt == Chem.rdchem.BondType.TRIPLE, bt == Chem.rdchem.BondType.AROMATIC, bond.IsInRing()]
+    fbond = [
+        bt == Chem.rdchem.BondType.SINGLE, 
+        bt == Chem.rdchem.BondType.DOUBLE, 
+        bt == Chem.rdchem.BondType.TRIPLE, 
+        bt == Chem.rdchem.BondType.AROMATIC, 
+        bond.IsInRing()
+    ]
     fstereo = onek_encoding_unk(stereo, [0,1,2,3,4,5])
     return torch.Tensor(fbond + fstereo)
 
 class MPN(nn.Module):
 
-    def __init__(self, hidden_size, depth):
+    def __init__(self, hidden_size, depth, device=None):
         super(MPN, self).__init__()
         self.hidden_size = hidden_size
         self.depth = depth
@@ -40,12 +46,14 @@ class MPN(nn.Module):
         self.W_i = nn.Linear(ATOM_FDIM + BOND_FDIM, hidden_size, bias=False)
         self.W_h = nn.Linear(hidden_size, hidden_size, bias=False)
         self.W_o = nn.Linear(ATOM_FDIM + hidden_size, hidden_size)
+        self.device = device
+        self.to(device)
 
     def forward(self, fatoms, fbonds, agraph, bgraph, scope):
-        fatoms = create_var(fatoms)
-        fbonds = create_var(fbonds)
-        agraph = create_var(agraph)
-        bgraph = create_var(bgraph)
+        fatoms = create_var(fatoms, device=self.device)
+        fbonds = create_var(fbonds, device=self.device)
+        agraph = create_var(agraph, device=self.device)
+        bgraph = create_var(bgraph, device=self.device)
 
         binput = self.W_i(fbonds)
         message = F.relu(binput)

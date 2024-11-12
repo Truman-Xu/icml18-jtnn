@@ -11,7 +11,7 @@ MAX_DECODE_LEN = 100
 
 class JTNNDecoder(nn.Module):
 
-    def __init__(self, vocab, hidden_size, latent_size, embedding):
+    def __init__(self, vocab, hidden_size, latent_size, embedding, device=None):
         super(JTNNDecoder, self).__init__()
         self.hidden_size = hidden_size
         self.vocab_size = vocab.size()
@@ -38,6 +38,8 @@ class JTNNDecoder(nn.Module):
         #Loss Functions
         self.pred_loss = nn.CrossEntropyLoss(size_average=False)
         self.stop_loss = nn.BCEWithLogitsLoss(size_average=False)
+        self.device = device
+        self.to(device)
 
     def aggregate(self, hiddens, contexts, x_tree_vecs, mode):
         if mode == 'word':
@@ -65,12 +67,24 @@ class JTNNDecoder(nn.Module):
 
         #Predict Root
         batch_size = len(mol_batch)
-        pred_hiddens.append(create_var(torch.zeros(len(mol_batch),self.hidden_size)))
+        pred_hiddens.append(
+            create_var(
+                torch.zeros(len(mol_batch),self.hidden_size),
+                device=self.device
+            )
+        )
         pred_targets.extend([mol_tree.nodes[0].wid for mol_tree in mol_batch])
-        pred_contexts.append( create_var( torch.LongTensor(range(batch_size)) ) )
+        pred_contexts.append(
+            create_var(
+                torch.LongTensor(range(batch_size)), 
+                device=self.device
+            ) 
+        )
 
         max_iter = max([len(tr) for tr in traces])
-        padding = create_var(torch.zeros(self.hidden_size), False)
+        padding = create_var(
+            torch.zeros(self.hidden_size), False, device=self.device
+        )
         h = {}
 
         for t in range(max_iter):
@@ -101,7 +115,7 @@ class JTNNDecoder(nn.Module):
                 cur_x.append(node_x.wid)
 
             #Clique embedding
-            cur_x = create_var(torch.LongTensor(cur_x))
+            cur_x = create_var(torch.LongTensor(cur_x), device=self.device)
             cur_x = self.embedding(cur_x) 
             
             #Message passing
@@ -126,7 +140,7 @@ class JTNNDecoder(nn.Module):
                 stop_target.append(direction)
 
             #Hidden states for stop prediction
-            cur_batch = create_var(torch.LongTensor(batch_list))
+            cur_batch = create_var(torch.LongTensor(batch_list), device=self.device)
             stop_hidden = torch.cat([cur_x,cur_o], dim=1)
             stop_hiddens.append( stop_hidden )
             stop_contexts.append( cur_batch )
@@ -135,10 +149,10 @@ class JTNNDecoder(nn.Module):
             #Hidden states for clique prediction
             if len(pred_list) > 0:
                 batch_list = [batch_list[i] for i in pred_list]
-                cur_batch = create_var(torch.LongTensor(batch_list))
+                cur_batch = create_var(torch.LongTensor(batch_list), device=self.device)
                 pred_contexts.append( cur_batch )
 
-                cur_pred = create_var(torch.LongTensor(pred_list))
+                cur_pred = create_var(torch.LongTensor(pred_list), device=self.device)
                 pred_hiddens.append( new_h.index_select(0, cur_pred) )
                 pred_targets.extend( pred_target )
 
@@ -152,21 +166,25 @@ class JTNNDecoder(nn.Module):
             cur_o_nei.extend(cur_nei)
             cur_o_nei.extend([padding] * pad_len)
 
-        cur_x = create_var(torch.LongTensor(cur_x))
+        cur_x = create_var(torch.LongTensor(cur_x), device=self.device)
         cur_x = self.embedding(cur_x) 
         cur_o_nei = torch.stack(cur_o_nei, dim=0).view(-1,MAX_NB,self.hidden_size)
         cur_o = cur_o_nei.sum(dim=1)
 
         stop_hidden = torch.cat([cur_x,cur_o], dim=1)
         stop_hiddens.append( stop_hidden )
-        stop_contexts.append( create_var( torch.LongTensor(range(batch_size)) ) )
+        stop_contexts.append(
+            create_var(
+                torch.LongTensor(range(batch_size)), device=self.device
+            )
+        )
         stop_targets.extend( [0] * len(mol_batch) )
 
         #Predict next clique
         pred_contexts = torch.cat(pred_contexts, dim=0)
         pred_hiddens = torch.cat(pred_hiddens, dim=0)
         pred_scores = self.aggregate(pred_hiddens, pred_contexts, x_tree_vecs, 'word')
-        pred_targets = create_var(torch.LongTensor(pred_targets))
+        pred_targets = create_var(torch.LongTensor(pred_targets), device=self.device)
 
         pred_loss = self.pred_loss(pred_scores, pred_targets) / len(mol_batch)
         _,preds = torch.max(pred_scores, dim=1)
@@ -179,7 +197,7 @@ class JTNNDecoder(nn.Module):
         stop_hiddens = F.relu( self.U_i(stop_hiddens) )
         stop_scores = self.aggregate(stop_hiddens, stop_contexts, x_tree_vecs, 'stop')
         stop_scores = stop_scores.squeeze(-1)
-        stop_targets = create_var(torch.Tensor(stop_targets))
+        stop_targets = create_var(torch.Tensor(stop_targets), device=self.device)
         
         stop_loss = self.stop_loss(stop_scores, stop_targets) / len(mol_batch)
         stops = torch.ge(stop_scores, 0).float()
@@ -192,9 +210,9 @@ class JTNNDecoder(nn.Module):
         assert x_tree_vecs.size(0) == 1
 
         stack = []
-        init_hiddens = create_var( torch.zeros(1, self.hidden_size) )
-        zero_pad = create_var(torch.zeros(1,1,self.hidden_size))
-        contexts = create_var( torch.LongTensor(1).zero_() )
+        init_hiddens = create_var(torch.zeros(1, self.hidden_size), device=self.device)
+        zero_pad = create_var(torch.zeros(1,1,self.hidden_size), device=self.device)
+        contexts = create_var(torch.LongTensor(1).zero_(), device=self.device)
 
         #Root Prediction
         root_score = self.aggregate(init_hiddens, contexts, x_tree_vecs, 'word')
@@ -216,7 +234,7 @@ class JTNNDecoder(nn.Module):
             else:
                 cur_h_nei = zero_pad
 
-            cur_x = create_var(torch.LongTensor([node_x.wid]))
+            cur_x = create_var(torch.LongTensor([node_x.wid]), device=self.device)
             cur_x = self.embedding(cur_x)
 
             #Predict stop
@@ -283,7 +301,8 @@ Helper Functions:
 """
 def dfs(stack, x, fa_idx):
     for y in x.neighbors:
-        if y.idx == fa_idx: continue
+        if y.idx == fa_idx: 
+            continue
         stack.append( (x,y,1) )
         dfs(stack, y, x.idx)
         stack.append( (y,x,0) )

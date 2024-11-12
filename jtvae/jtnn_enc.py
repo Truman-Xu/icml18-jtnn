@@ -5,7 +5,7 @@ from .nnutils import create_var, index_select_ND
 
 class JTNNEncoder(nn.Module):
 
-    def __init__(self, hidden_size, depth, embedding):
+    def __init__(self, hidden_size, depth, embedding, device=None):
         super(JTNNEncoder, self).__init__()
         self.hidden_size = hidden_size
         self.depth = depth
@@ -15,14 +15,19 @@ class JTNNEncoder(nn.Module):
             nn.Linear(2 * hidden_size, hidden_size),
             nn.ReLU()
         )
-        self.GRU = GraphGRU(hidden_size, hidden_size, depth=depth)
+        self.GRU = GraphGRU(hidden_size, hidden_size, depth=depth, device=device)
+        self.device = device
+        self.to(device)
 
     def forward(self, fnode, fmess, node_graph, mess_graph, scope):
-        fnode = create_var(fnode)
-        fmess = create_var(fmess)
-        node_graph = create_var(node_graph)
-        mess_graph = create_var(mess_graph)
-        messages = create_var(torch.zeros(mess_graph.size(0), self.hidden_size))
+        fnode = create_var(fnode, device=self.device)
+        fmess = create_var(fmess, device=self.device)
+        node_graph = create_var(node_graph, device=self.device)
+        mess_graph = create_var(mess_graph, device=self.device)
+        messages = create_var(
+            torch.zeros(mess_graph.size(0), self.hidden_size),
+            device=self.device
+        )
 
         fnode = self.embedding(fnode)
         fmess = index_select_ND(fnode, 0, fmess)
@@ -92,7 +97,7 @@ class JTNNEncoder(nn.Module):
 
 class GraphGRU(nn.Module):
 
-    def __init__(self, input_size, hidden_size, depth):
+    def __init__(self, input_size, hidden_size, depth, device=None):
         super(GraphGRU, self).__init__()
         self.hidden_size = hidden_size
         self.input_size = input_size
@@ -102,11 +107,13 @@ class GraphGRU(nn.Module):
         self.W_r = nn.Linear(input_size, hidden_size, bias=False)
         self.U_r = nn.Linear(hidden_size, hidden_size)
         self.W_h = nn.Linear(input_size + hidden_size, hidden_size)
+        self.device = device
+        self.to(device)
 
     def forward(self, h, x, mess_graph):
         mask = torch.ones(h.size(0), 1)
         mask[0] = 0 #first vector is padding
-        mask = create_var(mask)
+        mask = create_var(mask, device=self.device)
         for it in range(self.depth):
             h_nei = index_select_ND(h, 0, mess_graph)
             sum_h = h_nei.sum(dim=1)

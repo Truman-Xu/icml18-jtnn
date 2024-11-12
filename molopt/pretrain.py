@@ -9,7 +9,8 @@ import math, random, sys
 from optparse import OptionParser
 from collections import deque
 
-from jtnn import *
+from jtvae import *
+from jtvae.nnutils import check_device
 import rdkit
 
 lg = rdkit.RDLogger.logger() 
@@ -34,6 +35,7 @@ hidden_size = int(opts.hidden_size)
 latent_size = int(opts.latent_size)
 depth = int(opts.depth)
 
+device = check_device()
 model = JTPropVAE(vocab, hidden_size, latent_size, depth)
 
 for param in model.parameters():
@@ -42,7 +44,7 @@ for param in model.parameters():
     else:
         nn.init.xavier_normal(param)
 
-model = model.cuda()
+model = model.to(device)
 print "Model #Params: %dK" % (sum([x.nelement() for x in model.parameters()]) / 1000,)
 
 optimizer = optim.Adam(model.parameters(), lr=1e-3)

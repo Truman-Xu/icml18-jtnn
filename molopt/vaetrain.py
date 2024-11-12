@@ -9,7 +9,8 @@ import math, random, sys
 from optparse import OptionParser
 from collections import deque
 
-from jtnn import *
+from jtvae import *
+from jtvae.nnutils import check_device
 import rdkit
 
 lg = rdkit.RDLogger.logger() 
@@ -50,7 +51,8 @@ else:
         else:
             nn.init.xavier_normal(param)
 
-model = model.cuda()
+device = check_device()
+model = model.to(device)
 print "Model #Params: %dK" % (sum([x.nelement() for x in model.parameters()]) / 1000,)
 
 optimizer = optim.Adam(model.parameters(), lr=lr)

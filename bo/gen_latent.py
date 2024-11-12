@@ -10,7 +10,8 @@ from rdkit.Chem import rdmolops
 import sascorer
 
 import numpy as np  
-from jtnn import *
+from jtvae import *
+from jtvae.nnutils import check_device
 
 lg = rdkit.RDLogger.logger() 
 lg.setLevel(rdkit.RDLogger.CRITICAL)
@@ -21,13 +22,14 @@ parser.add_option("-v", "--vocab", dest="vocab_path")
 parser.add_option("-m", "--model", dest="model_path")
 parser.add_option("-w", "--hidden", dest="hidden_size", default=200)
 parser.add_option("-l", "--latent", dest="latent_size", default=56)
-parser.add_option("-d", "--depth", dest="depth", default=3)
+parser.add_option("-d", "--depthG", dest="depthG", default=3)
+parser.add_option("-t", "--depthT", dest="depthT", default=20)
 opts,args = parser.parse_args()
 
 with open(opts.data_path) as f:
     smiles = f.readlines()
 
-for i in xrange(len(smiles)):
+for i in range(len(smiles)):
     smiles[ i ] = smiles[ i ].strip()
 
 vocab = [x.strip("\r\n ") for x in open(opts.vocab_path)] 
@@ -36,22 +38,24 @@ vocab = Vocab(vocab)
 batch_size = 100
 hidden_size = int(opts.hidden_size)
 latent_size = int(opts.latent_size)
-depth = int(opts.depth)
+depthT = int(opts.depthT)
+depthG = int(opts.depthG)
 
-model = JTNNVAE(vocab, hidden_size, latent_size, depth)
+device = check_device()
+model = JTNNVAE(vocab, hidden_size, latent_size, depthT, depthG)
 model.load_state_dict(torch.load(opts.model_path))
-model = model.cuda()
+model = model.to(device)
 
 smiles_rdkit = []
-for i in xrange(len(smiles)):
+for i in range(len(smiles)):
     smiles_rdkit.append(MolToSmiles(MolFromSmiles(smiles[ i ]), isomericSmiles=True))
 
 logP_values = []
-for i in xrange(len(smiles)):
+for i in range(len(smiles)):
     logP_values.append(Descriptors.MolLogP(MolFromSmiles(smiles_rdkit[ i ])))
 
 SA_scores = []
-for i in xrange(len(smiles)):
+for i in range(len(smiles)):
     SA_scores.append(-sascorer.calculateScore(MolFromSmiles(smiles_rdkit[ i ])))
 
 import networkx as nx
@@ -74,9 +78,9 @@ logP_values_normalized = (np.array(logP_values) - np.mean(logP_values)) / np.std
 cycle_scores_normalized = (np.array(cycle_scores) - np.mean(cycle_scores)) / np.std(cycle_scores)
 
 latent_points = []
-for i in xrange(0, len(smiles), batch_size):
+for i in range(0, len(smiles), batch_size):
     batch = smiles[i:i+batch_size]
-    mol_vec = model.encode_latent_mean(batch)
+    mol_vec = model.encode_from_smiles(batch)
     latent_points.append(mol_vec.data.cpu().numpy())
 
 # We store the results

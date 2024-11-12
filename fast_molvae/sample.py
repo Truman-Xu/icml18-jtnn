@@ -4,6 +4,7 @@ import torch.nn as nn
 import math, random, sys
 import argparse
 from jtvae import *
+from jtvae.nnutils import check_device
 import rdkit
 
 lg = rdkit.RDLogger.logger() 
@@ -21,12 +22,15 @@ parser.add_argument('--depthG', type=int, default=3)
 
 args = parser.parse_args()
    
-vocab = [x.strip("\r\n ") for x in open(args.vocab)] 
-vocab = Vocab(vocab)
+model_vocab = [x.strip("\r\n ") for x in open(args.vocab)] 
+model_vocab = Vocab(model_vocab)
 
-model = JTNNVAE(vocab, args.hidden_size, args.latent_size, args.depthT, args.depthG)
+device = check_device()
+model = JTNNVAE(
+    model_vocab, args.hidden_size, args.latent_size, args.depthT, args.depthG,
+)
 model.load_state_dict(torch.load(args.model))
-model = model.cuda()
+model = model.to(device)
 
 torch.manual_seed(0)
 for i in range(args.nsample):

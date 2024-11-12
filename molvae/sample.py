@@ -1,17 +1,8 @@
-import torch
-import torch.nn as nn
-import torch.optim as optim
-import torch.optim.lr_scheduler as lr_scheduler
-from torch.autograd import Variable
-
-import math, random, sys
 from optparse import OptionParser
-from collections import deque
+import torch
 import rdkit
-import rdkit.Chem as Chem
-from rdkit.Chem import Draw
-
-from jtnn import *
+from jtvae import *
+from jtvae.nnutils import check_device
 
 lg = rdkit.RDLogger.logger() 
 lg.setLevel(rdkit.RDLogger.CRITICAL)
@@ -35,13 +26,14 @@ depth = int(opts.depth)
 nsample = int(opts.nsample)
 stereo = True if int(opts.stereo) == 1 else False
 
+device = check_device()
 model = JTNNVAE(vocab, hidden_size, latent_size, depth, stereo=stereo)
 load_dict = torch.load(opts.model_path)
 missing = {k: v for k, v in model.state_dict().items() if k not in load_dict}
 load_dict.update(missing) 
 model.load_state_dict(load_dict)
-model = model.cuda()
+model = model.to(device)
 
 torch.manual_seed(0)
-for i in xrange(nsample):
-    print model.sample_prior(prob_decode=False)
+for i in range(nsample):
+    print(model.sample_prior(prob_decode=False))

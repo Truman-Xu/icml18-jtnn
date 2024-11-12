@@ -10,7 +10,8 @@ import rdkit.Chem as Chem
 from rdkit.Chem import Draw
 
 import numpy as np
-from jtnn import *
+from jtvae import *
+from jtvae.nnutils import check_device, create_var
 
 lg = rdkit.RDLogger.logger() 
 lg.setLevel(rdkit.RDLogger.CRITICAL)
@@ -30,9 +31,10 @@ hidden_size = int(opts.hidden_size)
 latent_size = int(opts.latent_size)
 depth = int(opts.depth)
 
+device = check_device()
 model = JTNNVAE(vocab, hidden_size, latent_size, depth)
 model.load_state_dict(torch.load(opts.model_path))
-model = model.cuda()
+model = model.to(device)
 
 np.random.seed(0)
 x = np.random.randn(latent_size)
@@ -49,8 +51,8 @@ z0 = z0.data.cpu().numpy()
 
 delta = 1
 nei_mols = []
-for dx in xrange(-6,7):
-    for dy in xrange(-6,7):
+for dx in range(-6,7):
+    for dy in range(-6,7):
         z = z0 + x * delta * dx + y * delta * dy
         tree_z, mol_z = torch.Tensor(z).unsqueeze(0).chunk(2, dim=1)
         tree_z, mol_z = create_var(tree_z), create_var(mol_z)

@@ -28,7 +28,7 @@ def bond_features(bond):
 
 class JTMPN(nn.Module):
 
-    def __init__(self, hidden_size, depth):
+    def __init__(self, hidden_size, depth, device=None):
         super(JTMPN, self).__init__()
         self.hidden_size = hidden_size
         self.depth = depth
@@ -36,12 +36,14 @@ class JTMPN(nn.Module):
         self.W_i = nn.Linear(ATOM_FDIM + BOND_FDIM, hidden_size, bias=False)
         self.W_h = nn.Linear(hidden_size, hidden_size, bias=False)
         self.W_o = nn.Linear(ATOM_FDIM + hidden_size, hidden_size)
+        self.device = device
+        self.to(device)
 
     def forward(self, fatoms, fbonds, agraph, bgraph, scope, tree_message): #tree_message[0] == vec(0)
-        fatoms = create_var(fatoms)
-        fbonds = create_var(fbonds)
-        agraph = create_var(agraph)
-        bgraph = create_var(bgraph)
+        fatoms = create_var(fatoms, device=self.device)
+        fbonds = create_var(fbonds, device=self.device)
+        agraph = create_var(agraph, device=self.device)
+        bgraph = create_var(bgraph, device=self.device)
 
         binput = self.W_i(fbonds)
         graph_message = F.relu(binput)
@@ -64,11 +66,11 @@ class JTMPN(nn.Module):
             mol_vec = atom_hiddens.narrow(0, st, le).sum(dim=0) / le
             mol_vecs.append(mol_vec)
 
-        mol_vecs = torch.stack(mol_vecs, dim=0)
+        mol_vecs = torch.stack(mol_vecs, dim=0).to(self.device)
         return mol_vecs
 
     @staticmethod
-    def tensorize(cand_batch, mess_dict):
+    def tensorize(cand_batch, mess_dict, device):
         fatoms,fbonds = [],[] 
         in_bonds,all_bonds = [],[] 
         total_atoms = 0
@@ -119,10 +121,10 @@ class JTMPN(nn.Module):
             total_atoms += n_atoms
         
         total_bonds = len(all_bonds)
-        fatoms = torch.stack(fatoms, 0)
-        fbonds = torch.stack(fbonds, 0)
-        agraph = torch.zeros(total_atoms,MAX_NB).long()
-        bgraph = torch.zeros(total_bonds,MAX_NB).long()
+        fatoms = torch.stack(fatoms, 0).to(device)
+        fbonds = torch.stack(fbonds, 0).to(device)
+        agraph = torch.zeros(total_atoms,MAX_NB).long().to(device)
+        bgraph = torch.zeros(total_bonds,MAX_NB).long().to(device)
 
         for a in range(total_atoms):
             for i,b in enumerate(in_bonds[a]):

@@ -103,7 +103,9 @@ class MolTreeDataset(Dataset):
     def __getitem__(self, idx):
         return tensorize(self.data[idx], self.vocab, assm=self.assm)
 
-def tensorize(tree_batch, vocab, assm=True):
+def tensorize(tree_batch, vocab, assm=True, device=None):
+    if device is None:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     set_batch_nodeID(tree_batch, vocab)
     smiles_batch = [tree.smiles for tree in tree_batch]
     jtenc_holder, mess_dict = JTNNEncoder.tensorize(tree_batch)
@@ -121,7 +123,7 @@ def tensorize(tree_batch, vocab, assm=True):
             cands.extend( [(cand, mol_tree.nodes, node) for cand in node.cands] )
             batch_idx.extend([i] * len(node.cands))
 
-    jtmpn_holder = JTMPN.tensorize(cands, mess_dict)
+    jtmpn_holder = JTMPN.tensorize(cands, mess_dict, device)
     batch_idx = torch.LongTensor(batch_idx)
 
     return tree_batch, jtenc_holder, mpn_holder, (jtmpn_holder,batch_idx)

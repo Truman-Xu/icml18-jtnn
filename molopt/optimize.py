@@ -10,7 +10,7 @@ import rdkit
 import rdkit.Chem as Chem
 from rdkit.Chem import Descriptors
 import sascorer
-
+from jtvae.nnutils import check_device
 from jtnn import *
 
 lg = rdkit.RDLogger.logger() 
@@ -34,9 +34,10 @@ latent_size = int(opts.latent_size)
 depth = int(opts.depth)
 sim_cutoff = float(opts.cutoff)
 
+device = check_device()
 model = JTPropVAE(vocab, hidden_size, latent_size, depth)
 model.load_state_dict(torch.load(opts.model_path))
-model = model.cuda()
+model = model.to(device)
 
 data = []
 with open(opts.test_path) as f:

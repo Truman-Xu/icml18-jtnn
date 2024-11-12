@@ -11,16 +11,19 @@ from .mpn import MPN
 from .jtmpn import JTMPN
 from .datautils import tensorize
 from .chemutils import enum_assemble, set_atommap, copy_edit_mol, attach_mols
-
+from jtvae.nnutils import check_device
 
 class JTNNVAE(nn.Module):
 
-    def __init__(self, vocab, hidden_size, latent_size, depthT, depthG):
+    def __init__(self, vocab, hidden_size, latent_size, depthT, depthG, device=None):
         super(JTNNVAE, self).__init__()
         self.vocab = vocab
         self.hidden_size = hidden_size
         latent_size //= 2 #Tree and Mol has two vectors
         self.latent_size = latent_size
+        if device is None:
+            device = check_device()
+        self.device = device
 
         self.jtnn = JTNNEncoder(
             hidden_size, depthT, nn.Embedding(vocab.size(), hidden_size)
@@ -40,6 +43,26 @@ class JTNNVAE(nn.Module):
         self.T_var = nn.Linear(hidden_size, latent_size)
         self.G_mean = nn.Linear(hidden_size, latent_size)
         self.G_var = nn.Linear(hidden_size, latent_size)
+        self.to(device)
+
+    def to(self, something):
+        super(JTNNVAE, self).to(something)
+        if isinstance(something, str) and something in ('cuda', 'cpu'):
+            something = torch.device(something)
+        if isinstance(something, torch.device):
+            self.device = something
+            self.jtnn.device = something
+            self.jtnn.GRU.device = something
+            self.decoder.device = something
+            self.jtmpn.device = something
+            self.mpn.device = something
+        return self
+    
+    def cuda(self):
+        return self.to(torch.device('cuda'))
+    
+    def cpu(self):
+        return self.to(torch.device('cpu'))
 
     def encode(self, jtenc_holder, mpn_holder):
         tree_vecs, tree_mess = self.jtnn(*jtenc_holder)
@@ -66,20 +89,25 @@ class JTNNVAE(nn.Module):
         z_mean = W_mean(z_vecs)
         z_log_var = -torch.abs(W_var(z_vecs)) #Following Mueller et al.
         kl_loss = -0.5 * torch.sum(1.0 + z_log_var - z_mean * z_mean - torch.exp(z_log_var)) / batch_size
-        epsilon = create_var(torch.randn_like(z_mean))
+        epsilon = create_var(torch.randn_like(z_mean), device=self.device)
         z_vecs = z_mean + torch.exp(z_log_var / 2) * epsilon
         return z_vecs, kl_loss
 
-    def sample_prior(self, prob_decode=False):
-        z_tree = torch.randn(1, self.latent_size).cuda()
-        z_mol = torch.randn(1, self.latent_size).cuda()
+    def sample_prior(self, prob_decode=False, device=None):
+        if device is None:
+            device = self.device()
+        z_tree = torch.randn(1, self.latent_size).to(device)
+        z_mol = torch.randn(1, self.latent_size).to(device)
         return self.decode(z_tree, z_mol, prob_decode)
 
-    def sample_prior_with_vecs(self, prob_decode=False):
-        z_tree = torch.randn(1, self.latent_size).cuda()
-        z_mol = torch.randn(1, self.latent_size).cuda()
+    def sample_prior_with_vecs(self, prob_decode=False, device=None):
+        if device is None:
+            device = self.device()
+        z_tree = torch.randn(1, self.latent_size).to(device)
+        z_mol = torch.randn(1, self.latent_size).to(device)
         smiles = self.decode(z_tree, z_mol, prob_decode)
-        return torch.cat([z_tree, z_mol], dim=1), smiles
+        vecs = self.encode_from_smiles([smiles])
+        return vecs, smiles
     
     def forward(self, x_batch, beta):
         x_batch, x_jtenc_holder, x_mpn_holder, x_jtmpn_holder = x_batch
@@ -96,7 +124,7 @@ class JTNNVAE(nn.Module):
     def assm(self, mol_batch, jtmpn_holder, x_mol_vecs, x_tree_mess):
         jtmpn_holder,batch_idx = jtmpn_holder
         fatoms,fbonds,agraph,bgraph,scope = jtmpn_holder
-        batch_idx = create_var(batch_idx)
+        batch_idx = create_var(batch_idx, device=self.device)
 
         cand_vecs = self.jtmpn(fatoms, fbonds, agraph, bgraph, scope, x_tree_mess)
 
@@ -121,7 +149,7 @@ class JTNNVAE(nn.Module):
                 if cur_score.data[label] >= cur_score.max().item():
                     acc += 1
 
-                label = create_var(torch.LongTensor([label]))
+                label = create_var(torch.LongTensor([label]), device=self.device)
                 all_loss.append( self.assm_loss(cur_score.view(1,-1), label) )
         
         all_loss = sum(all_loss) / len(mol_batch)
@@ -130,8 +158,9 @@ class JTNNVAE(nn.Module):
     def decode(self, x_tree_vecs, x_mol_vecs, prob_decode):
         #currently do not support batch decoding
         assert x_tree_vecs.size(0) == 1 and x_mol_vecs.size(0) == 1
-
-        pred_root,pred_nodes = self.decoder.decode(x_tree_vecs, prob_decode)
+        x_tree_vecs = x_tree_vecs.to(self.device)
+        x_mol_vecs = x_mol_vecs.to(self.device)
+        pred_root, pred_nodes = self.decoder.decode(x_tree_vecs, prob_decode)
         if len(pred_nodes) == 0:
             return None
         elif len(pred_nodes) == 1:
@@ -172,7 +201,12 @@ class JTNNVAE(nn.Module):
         cur_mol = Chem.MolFromSmiles(Chem.MolToSmiles(cur_mol))
         return Chem.MolToSmiles(cur_mol) if cur_mol is not None else None
         
-    def dfs_assemble(self, y_tree_mess, x_mol_vecs, all_nodes, cur_mol, global_amap, fa_amap, cur_node, fa_node, prob_decode, check_aroma):
+    def dfs_assemble(
+            self, y_tree_mess, x_mol_vecs, all_nodes, cur_mol, 
+            global_amap, fa_amap, cur_node, fa_node, prob_decode, 
+            check_aroma
+        ):
+
         fa_nid = fa_node.nid if fa_node is not None else -1
         prev_nodes = [fa_node] if fa_node is not None else []
 
@@ -188,11 +222,11 @@ class JTNNVAE(nn.Module):
             return None, cur_mol
 
         cand_smiles,cand_amap = zip(*cands)
-        aroma_score = torch.Tensor(aroma_score).cuda()
+        aroma_score = torch.Tensor(aroma_score).to(self.device)
         cands = [(smiles, all_nodes, cur_node) for smiles in cand_smiles]
 
         if len(cands) > 1:
-            jtmpn_holder = JTMPN.tensorize(cands, y_tree_mess[1])
+            jtmpn_holder = JTMPN.tensorize(cands, y_tree_mess[1], device=self.device)
             fatoms,fbonds,agraph,bgraph,scope = jtmpn_holder
             cand_vecs = self.jtmpn(fatoms, fbonds, agraph, bgraph, scope, y_tree_mess[0])
             scores = torch.mv(cand_vecs, x_mol_vecs) + aroma_score

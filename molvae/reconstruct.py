@@ -9,8 +9,8 @@ from collections import deque
 import rdkit
 import rdkit.Chem as Chem
 
-from jtnn import *
-
+from jtvae import *
+from jtvae.nnutils import check_device
 lg = rdkit.RDLogger.logger() 
 lg.setLevel(rdkit.RDLogger.CRITICAL)
 
@@ -32,9 +32,10 @@ latent_size = int(opts.latent_size)
 depth = int(opts.depth)
 stereo = True if int(opts.stereo) == 1 else False
 
+device = check_device()
 model = JTNNVAE(vocab, hidden_size, latent_size, depth, stereo=stereo)
 model.load_state_dict(torch.load(opts.model_path))
-model = model.cuda()
+model = model.to(device)
 
 data = []
 with open(opts.test_path) as f:
