@@ -102,7 +102,7 @@ class JTNNVAE(nn.Module):
 
     def sample_prior_with_vecs(self, prob_decode=False, device=None):
         if device is None:
-            device = self.device()
+            device = self.device
         z_tree = torch.randn(1, self.latent_size).to(device)
         z_mol = torch.randn(1, self.latent_size).to(device)
         smiles = self.decode(z_tree, z_mol, prob_decode)

@@ -1,6 +1,6 @@
 import rdkit
 from rdkit import Chem
-from .chemutils import get_clique_mol, tree_decomp, get_mol, set_atommap, enum_assemble
+from .chemutils import get_clique_mol, tree_decomp, get_mol, set_atommap, enum_assemble, get_smiles
 
 class MolTreeNode:
     def __init__(self, smiles, clique=[]):
@@ -42,11 +42,27 @@ class MolTreeNode:
             original_mol.GetAtomWithIdx(cidx).SetAtomMapNum(0)
 
         return self.label
+    
+    def assemble(self):
+        neighbors = [nei for nei in self.neighbors if nei.mol.GetNumAtoms() > 1]
+        neighbors = sorted(neighbors, key=lambda x:x.mol.GetNumAtoms(), reverse=True)
+        singletons = [nei for nei in self.neighbors if nei.mol.GetNumAtoms() == 1]
+        neighbors = singletons + neighbors
+
+        cands,aroma = enum_assemble(self, neighbors)
+        new_cands = [cand for i,cand in enumerate(cands) if aroma[i] >= 0]
+        if len(new_cands) > 0: cands = new_cands
+
+        if len(cands) > 0:
+            self.cands, _ = zip(*cands)
+            self.cands = list(self.cands)
+        else:
+            self.cands = []
 
 class MolTree:
     def __init__(self, smiles):
         self.smiles = smiles
-        self.mol = Chem.MolFromSmiles(smiles)
+        self.mol = get_mol(smiles)
 
         #Stereo Generation (currently disabled)
         #mol = Chem.MolFromSmiles(smiles)
@@ -99,7 +115,7 @@ def dfs(node, fa_idx):
 
 if __name__ == "__main__":
     import sys
-    lg = rdkit.RDLogger.logger() 
+    lg = rdkit.RDLogger.logger()
     lg.setLevel(rdkit.RDLogger.CRITICAL)
 
     cset = set()
